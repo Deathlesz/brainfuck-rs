@@ -22,10 +22,10 @@ fn main() {
         .unwrap_or_else(|_| exit_with_error(Error::SourceFileError("failed to read file")))
         .iter()
         .filter_map(|v| match v {
-            b'>' => Some(Instruction::Right),
-            b'<' => Some(Instruction::Left),
-            b'+' => Some(Instruction::Increment),
-            b'-' => Some(Instruction::Decrement),
+            b'>' => Some(Instruction::Move(1)),
+            b'<' => Some(Instruction::Move(-1)),
+            b'+' => Some(Instruction::Add(1)),
+            b'-' => Some(Instruction::Add(-1)),
             b'.' => Some(Instruction::Output),
             b',' => Some(Instruction::Input),
             b'[' => Some(Instruction::LoopStart(None)),

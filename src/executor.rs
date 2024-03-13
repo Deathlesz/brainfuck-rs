@@ -24,6 +24,7 @@ impl Executor<'_> {
     }
 
     pub fn run(mut self) -> Result<(), ExecutionError> {
+        self.optimize();
         self.fill_loops()?;
 
         let mut instruction_ptr = 0;
@@ -32,14 +33,31 @@ impl Executor<'_> {
             let instruction = &self.instructions[instruction_ptr];
 
             match instruction {
-                Instruction::Right => self.buffer_ptr = (self.buffer_ptr + 1) % 30_000,
-                Instruction::Left => self.buffer_ptr = (self.buffer_ptr - 1) % 30_000,
-                Instruction::Increment => self.buffer[self.buffer_ptr] += 1,
-                Instruction::Decrement => self.buffer[self.buffer_ptr] -= 1,
+                Instruction::Move(value) => {
+                    let buffer_ptr = if *value < 0 {
+                        if self.buffer_ptr >= -value as usize {
+                            self.buffer_ptr - -value as usize
+                        } else {
+                            30_000 - (-value as usize - self.buffer_ptr)
+                        }
+                    } else {
+                        (self.buffer_ptr + *value as usize) % 30_000
+                    };
+
+                    self.buffer_ptr = buffer_ptr;
+                }
+                Instruction::Add(value) => {
+                    if *value < 0 {
+                        self.buffer[self.buffer_ptr] -= Wrapping(-value as u8);
+                    } else {
+                        self.buffer[self.buffer_ptr] += Wrapping(*value as u8);
+                    }
+                }
                 Instruction::Output => {
                     write!(self.stdout, "{}", self.buffer[self.buffer_ptr].0 as char)?
                 }
                 Instruction::Input => {
+                    // TODO: there's gotta be a better way, right?.. Right?!
                     let mut buf = [0; 1];
 
                     std::io::stdin().read_exact(&mut buf)?;
@@ -63,6 +81,42 @@ impl Executor<'_> {
         }
 
         Ok(())
+    }
+
+    fn optimize(&mut self) {
+        let mut optimized = Vec::with_capacity(self.instructions.len());
+
+        let mut instruction_ptr = 0;
+        let mut previous_instruction: Option<Instruction> = None;
+        while instruction_ptr < self.instructions.len() {
+            let instruction = self.instructions[instruction_ptr];
+
+            match (previous_instruction, instruction) {
+                (None, _) => previous_instruction = Some(instruction),
+                (Some(Instruction::Move(value1)), Instruction::Move(value2)) => {
+                    previous_instruction = Some(Instruction::Move(value1 + value2));
+                }
+                (Some(Instruction::Add(value1)), Instruction::Add(value2)) => {
+                    previous_instruction = Some(Instruction::Add(value1 + value2));
+                }
+                _ => {
+                    if let Some(previous_instruction) = previous_instruction {
+                        optimized.push(previous_instruction);
+                    } else {
+                        optimized.push(instruction)
+                    }
+                    previous_instruction = Some(instruction)
+                }
+            }
+
+            instruction_ptr += 1;
+        }
+
+        if let Some(previous_instruction) = previous_instruction {
+            optimized.push(previous_instruction);
+        }
+
+        self.instructions = optimized;
     }
 
     fn fill_loops(&mut self) -> Result<(), ExecutionError> {
